@@ -2,11 +2,11 @@
 # Cookbook Name:: chef-client
 # Recipe:: service
 #
-# Author:: Joshua Timberman (<joshua@opscode.com>)
-# Author:: Seth Chisamore (<schisamo@opscode.com>)
-# Author:: Paul Mooring (<paul@opscode.com>)
+# Author:: Joshua Timberman (<joshua@chef.io>)
+# Author:: Seth Chisamore (<schisamo@chef.io>)
+# Author:: Paul Mooring (<paul@chef.io>)
 #
-# Copyright 2009-2013, Opscode, Inc.
+# Copyright 2009-2016, Chef Software, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,24 +21,25 @@
 # limitations under the License.
 #
 
-supported_init_styles = [
-  'arch',
-  'bluepill',
-  'bsd',
-  'daemontools',
-  'init',
-  'launchd',
-  'runit',
-  'smf',
-  'upstart',
-  'windows',
-  'winsw'
-]
-init_style = node["chef_client"]["init_style"]
+supported_init_styles = %w(
+  bluepill
+  bsd
+  daemontools
+  init
+  launchd
+  runit
+  smf
+  src
+  systemd
+  upstart
+  windows
+)
+
+init_style = node['chef_client']['init_style']
 
 # Services moved to recipes
 if supported_init_styles.include? init_style
   include_recipe "chef-client::#{init_style}_service"
 else
-  log "Could not determine service init style, manual intervention required to start up the chef-client service."
+  log 'Could not determine service init style, manual intervention required to start up the chef-client service.'
 end

@@ -2,9 +2,9 @@
 # Cookbook Name:: chef-client
 # Recipe:: windows_service
 #
-# Author:: Julian Dunn (<jdunn@opscode.com>)
+# Author:: Julian Dunn (<jdunn@chef.io>)
 #
-# Copyright 2013, Opscode, Inc.
+# Copyright 2013-2016, Chef Software, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,21 +22,32 @@
 class ::Chef::Recipe
   include ::Opscode::ChefClient::Helpers
 end
+class ::Chef::Resource
+  include ::Opscode::ChefClient::Helpers
+end
 
-# Fall back to winsw on older Chef Clients without the service manager
-if Gem::Requirement.new("< 11.5").satisfied_by?(Gem::Version.new(::Chef::VERSION))
-  include_recipe "chef-client::winsw_service"
-else
-  # libraries/helpers.rb method to DRY directory creation resources
-  create_directories
+# libraries/helpers.rb method to DRY directory creation resources
+create_directories
 
-  # Will also avoid touching any winsw service if it exists
-  execute "register-chef-service" do
-    command "chef-service-manager -a install"
-    only_if { WMI::Win32_Service.find(:first, :conditions => {:name => 'chef-client'}).nil? }
-  end
+d_owner = root_owner
+d_group = node['root_group']
+install_command = "chef-service-manager -a install -c #{File.join(node['chef_client']['conf_dir'], 'client.service.rb')}"
+if Chef::VERSION <= '12.5.1'
+  install_command << " -L #{File.join(node['chef_client']['log_dir'], 'client.log')}"
+end
 
-  service "chef-client" do
-    action [:enable, :start]
-  end
+template "#{node['chef_client']['conf_dir']}/client.service.rb" do
+  source 'client.service.rb.erb'
+  owner d_owner
+  group d_group
+  mode 00644
+end
+
+execute 'register-chef-service' do
+  command install_command
+  not_if { chef_client_service_running }
+end
+
+service 'chef-client' do
+  action [:enable, :start]
 end

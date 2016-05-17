@@ -17,48 +17,61 @@
 # limitations under the License.
 #
 
-define :logrotate_app, :enable => true, :frequency => "weekly", :template => "logrotate.erb", :cookbook => "logrotate", :postrotate => nil, :prerotate => nil, :sharedscripts => false do
-  include_recipe "logrotate"
+log_rotate_params = {
+  :enable         => true,
+  :frequency      => 'weekly',
+  :template       => 'logrotate.erb',
+  :cookbook       => 'logrotate',
+  :template_mode  => '0440',
+  :template_owner => 'root',
+  :template_group => 'root',
+  :postrotate     => nil,
+  :prerotate      => nil,
+  :firstaction    => nil,
+  :lastaction     => nil,
+  :sharedscripts  => false
+}
 
-  acceptable_options = ['missingok', 'compress', 'delaycompress', 'copytruncate', 'notifempty', 'delaycompress', 'ifempty', 'mailfirst', 'nocompress', 'nocopy', 'nocopytruncate', 'nocreate', 'nodelaycompress', 'nomail', 'nomissingok', 'noolddir', 'nosharedscripts', 'notifempty', 'sharedscripts']
-  path = params[:path].respond_to?(:each) ? params[:path] : params[:path].split
-  options_tmp = params[:options] ||= ["missingok", "compress", "delaycompress", "copytruncate", "notifempty"]
+define(:logrotate_app, log_rotate_params) do
+  include_recipe 'logrotate::default'
+
+  options_tmp = params[:options] ||= %w(missingok compress delaycompress copytruncate notifempty)
   options = options_tmp.respond_to?(:each) ? options_tmp : options_tmp.split
+  options << 'sharedscripts' if params[:sharedscripts]
 
   if params[:enable]
+    invalid_options = options - CookbookLogrotate::DIRECTIVES
 
-    invalid_options = options - acceptable_options
-    if invalid_options.size == 1
-        Chef::Application.fatal! "The passed value [#{invalid_options[0]}] is not an acceptable value"
+    unless invalid_options.empty?
+      Chef::Log.error("Invalid option(s) passed to logrotate: #{invalid_options.join(', ')}")
+      raise
+    end
+
+    logrotate_config = {
+      :path => Array(params[:path]).map { |path| path.to_s.inspect }.join(' '),
+      :frequency => params[:frequency],
+      :options => options
+    }
+    CookbookLogrotate::VALUES.each do |opt_name|
+      logrotate_config[opt_name.to_sym] = params[opt_name.to_sym]
+    end
+
+    CookbookLogrotate::SCRIPTS.each do |script_name|
+      logrotate_config[script_name.to_sym] = Array(params[script_name.to_sym]).join("\n")
     end
 
     template "/etc/logrotate.d/#{params[:name]}" do
-      source params[:template]
+      source   params[:template]
       cookbook params[:cookbook]
-      mode 0440
-      owner "root"
-      group "root"
-      backup false
-      variables(
-        :path => path,
-        :create => params[:create],
-        :frequency => params[:frequency],
-        :size => params[:size],
-        :rotate => params[:rotate],
-        :sharedscripts => params[:sharedscripts],
-        :postrotate => params[:postrotate],
-        :prerotate => params[:prerotate],
-        :options => options
-      )
+      mode     params[:template_mode]
+      owner    params[:template_owner]
+      group    params[:template_group]
+      backup   false
+      variables logrotate_config
     end
-
   else
-
-    execute "rm /etc/logrotate.d/#{params[:name]}" do
-      only_if FileTest.exists?("/etc/logrotate.d/#{params[:name]}")
-      command "rm /etc/logrotate.d/#{params[:name]}"
+    file "/etc/logrotate.d/#{params[:name]}" do
+      action :delete
     end
-
   end
 end
-

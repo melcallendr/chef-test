@@ -1,11 +1,11 @@
 #
-# Author:: Joshua Timberman (<joshua@opscode.com>)
-# Author:: Seth Chisamore (<schisamo@opscode.com>)
+# Author:: Joshua Timberman (<joshua@chef.io>)
+# Author:: Seth Chisamore (<schisamo@chef.io>)
 # Author:: Bryan Berry (<bryan.berry@gmail.com>)
 # Cookbook Name:: chef-client
 # Recipe:: cron
 #
-# Copyright 2009-2011, Opscode, Inc.
+# Copyright 2009-2016, Chef Software, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,29 +20,32 @@
 # limitations under the License.
 #
 
-require "digest/md5"
+require 'digest/md5'
 
+# include helper methods
 class ::Chef::Recipe
   include ::Opscode::ChefClient::Helpers
 end
 
 # libraries/helpers.rb method to DRY directory creation resources
 client_bin = find_chef_client
-node.set["chef_client"]["bin"] = client_bin
+node.default['chef_client']['bin'] = client_bin
 create_directories
 
 dist_dir, conf_dir = value_for_platform_family(
-                                        ["debian"] => ["debian", "default"],
-                                        ["rhel"] => ["redhat", "sysconfig"]
-                                        )
+  ['debian'] => %w( debian default ),
+  ['rhel'] => %w( redhat sysconfig ),
+  ['fedora'] => %w( redhat sysconfig ),
+  ['suse'] => %w( suse sysconfig )
+)
 
 # let's create the service file so the :disable action doesn't fail
 case node['platform_family']
-when "arch","debian","rhel","fedora","suse","openbsd","freebsd"
-  template "/etc/init.d/chef-client" do
+when 'arch', 'debian', 'rhel', 'fedora', 'suse', 'openbsd', 'freebsd'
+  template '/etc/init.d/chef-client' do
     source "#{dist_dir}/init.d/chef-client.erb"
     mode 0755
-    variables( :client_bin => client_bin )
+    variables(client_bin: client_bin)
   end
 
   template "/etc/#{conf_dir}/chef-client" do
@@ -50,17 +53,15 @@ when "arch","debian","rhel","fedora","suse","openbsd","freebsd"
     mode 0644
   end
 
-  service "chef-client" do
-    supports :status => true, :restart => true
-    if node['chef_client']['init_style'] == 'upstart'
-      provider Chef::Provider::Service::Upstart
-    end
+  service 'chef-client' do
+    supports status: true, restart: true
+    provider Chef::Provider::Service::Upstart if node['chef_client']['init_style'] == 'upstart'
     action [:disable, :stop]
   end
 
-when "openindiana","opensolaris","nexentacore","solaris2","smartos"
-  service "chef-client" do
-    supports :status => true, :restart => true
+when 'openindiana', 'opensolaris', 'nexentacore', 'solaris2', 'smartos', 'omnios'
+  service 'chef-client' do
+    supports status: true, restart: true
     action [:disable, :stop]
     provider Chef::Provider::Service::Solaris
     ignore_failure true
@@ -68,35 +69,53 @@ when "openindiana","opensolaris","nexentacore","solaris2","smartos"
 end
 
 # Generate a uniformly distributed unique number to sleep.
-checksum   = Digest::MD5.hexdigest(node['fqdn'] || 'unknown-hostname')
-sleep_time = checksum.to_s.hex % node['chef_client']['splay'].to_i
+if node['chef_client']['splay'].to_i > 0
+  checksum   = Digest::MD5.hexdigest(node['fqdn'] || 'unknown-hostname')
+  sleep_time = checksum.to_s.hex % node['chef_client']['splay'].to_i
+else
+  sleep_time = nil
+end
 env        = node['chef_client']['cron']['environment_variables']
-log_file   = node["chef_client"]["cron"]["log_file"]
+log_file   = node['chef_client']['cron']['log_file']
+append_log = node['chef_client']['cron']['append_log'] ? '>>' : '>'
+
+# Use daemon_options in cron.
+client_bin << " #{node['chef_client']['daemon_options'].join(' ')}" if node['chef_client']['daemon_options'].any?
 
 # If "use_cron_d" is set to true, delete the cron entry that uses the cron
 # resource built in to Chef and instead use the cron_d LWRP.
 if node['chef_client']['cron']['use_cron_d']
-  cron "chef-client" do
+  cron 'chef-client' do
     action :delete
   end
 
-  cron_d "chef-client" do
+  cron_d 'chef-client' do
     minute  node['chef_client']['cron']['minute']
     hour    node['chef_client']['cron']['hour']
+    weekday node['chef_client']['cron']['weekday']
     path    node['chef_client']['cron']['path'] if node['chef_client']['cron']['path']
-    user    "root"
-    command "/bin/sleep #{sleep_time}; #{env} #{client_bin} > #{log_file} 2>&1"
+    mailto  node['chef_client']['cron']['mailto'] if node['chef_client']['cron']['mailto']
+    user    'root'
+    cmd = ''
+    cmd << "/bin/sleep #{sleep_time}; " if sleep_time
+    cmd << "#{env} #{client_bin} #{append_log} #{log_file} 2>&1"
+    command cmd
   end
 else
-  cron_d "chef-client" do
+  cron_d 'chef-client' do
     action :delete
   end
 
-  cron "chef-client" do
+  cron 'chef-client' do
     minute  node['chef_client']['cron']['minute']
     hour    node['chef_client']['cron']['hour']
+    weekday node['chef_client']['cron']['weekday']
     path    node['chef_client']['cron']['path'] if node['chef_client']['cron']['path']
-    user    "root"
-    command "/bin/sleep #{sleep_time}; #{env} #{client_bin} > #{log_file} 2>&1"
+    mailto  node['chef_client']['cron']['mailto'] if node['chef_client']['cron']['mailto']
+    user    'root'
+    cmd = ''
+    cmd << "/bin/sleep #{sleep_time}; " if sleep_time
+    cmd << "#{env} #{client_bin} #{append_log} #{log_file} 2>&1"
+    command cmd
   end
 end

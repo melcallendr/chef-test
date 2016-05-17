@@ -2,7 +2,7 @@
 # Cookbook Name:: cron
 # Recipe:: default
 #
-# Copyright 2010-2012, Opscode, Inc.
+# Copyright 2010-2015, Chef Software, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,23 +17,35 @@
 # limitations under the License.
 #
 
-cron_package = case node['platform']
-  when "redhat", "centos", "scientific", "fedora", "amazon"
-    node['platform_version'].to_f >= 6.0 ? "cronie" : "vixie-cron"
-  else
-    "cron"
-  end
-
-package cron_package do
-  action :install
+node['cron']['package_name'].each do |pkg|
+  package pkg
 end
 
-service "crond" do
-  case node['platform']
-  when "redhat", "centos", "scientific", "fedora", "amazon"
-    service_name "crond"
-  when "debian", "ubuntu", "suse"
-    service_name "cron"
+service 'cron' do
+  service_name node['cron']['service_name'] unless node['cron']['service_name'].nil?
+  action [:enable, :start]
+end
+
+# Some platforms (FreeBSD, Solaris) don't support /etc/cron.d, so we have to fake it.
+if node['cron']['emulate_cron.d']
+  directory '/etc/cron.d' do
+    mode '0755'
+    owner 'root'
+    group node['root_group']
   end
-  action [:start, :enable]
+
+  remote_file '/etc/crontab.os_source' do
+    source 'file:///etc/crontab'
+    owner 'root'
+    group node['root_group']
+    mode '0444'
+    action :create_if_missing
+  end
+
+  template '/etc/crontab' do
+    source 'crontab.erb'
+    owner 'root'
+    group node['root_group']
+    mode '0644'
+  end
 end

@@ -2,7 +2,7 @@
 # Cookbook Name:: chef-client
 # Recipe:: default
 #
-# Copyright 2010, Opscode, Inc.
+# Copyright 2010-2016, Chef Software, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,4 +17,4 @@
 # limitations under the License.
 #
 
-include_recipe "chef-client::service"
+include_recipe 'chef-client::service'
